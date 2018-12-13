@@ -13,7 +13,7 @@
 #define RECRUIT_TYPE 70
 #define ATTACK_TYPE 80
 
-
+//semaphore operations
 struct sembuf p = {0, -1, 0};
 struct sembuf v = {0, 1, 0};
 

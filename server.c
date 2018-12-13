@@ -89,7 +89,7 @@ void remove_all(int sems[3], int queues[3], int shmids[3])
     printf("Queues, shared memory and semaphores removed.\n");
 }
 
-int mf(int a)
+void mf(int a)
 {
     signal_happened = 1;
 }
@@ -104,19 +104,26 @@ void send_text(int msgid, char * text)
 
 void update_player(player * me, int semid, int msgid)
 {
-    semop(semid, &p, 0);
+
+    if(semop(semid, &p, 1) == -1) 
+    {
+        perror("Semaphores are disturbed, further data integrity cannot be guaranteed.\n"); 
+        //TODO add perrors to all semaphores, or make a wrapper for semop
+        //It turns out this program ran by accident
+        //Serious bugfix thanks to Merecatt <3
+    }
     printf("Update resources: %d\n", me->resources);
     msgsnd(msgid, me,sizeof(*me)-sizeof(long int),0);
-    semop(semid, &v, 0);
+    semop(semid, &v, 1);
 }
 
 void update_resources(int semid, player * me)
 {
-    semop(semid, &p, 0);
+    semop(semid, &p, 1);
     //printf("Resources before: %d\n", me->resources);
     me->resources += 50 + 5 * me->workers;
     //printf("Resources after: %d\n", me->resources);
-    semop(semid,&v,0);
+    semop(semid,&v,1);
 }
 
 int costs(units army)
@@ -135,10 +142,10 @@ void recruit(player * me,int player_id,int my_sem, int my_msg, int recruitqueue,
     while(*endgame == 0) {
         msgrcv(my_msg, &A, sizeof(A) - sizeof(long int), RECRUIT_TYPE, 0);
         //printf("Received: %d %d %d %d\n", A.military[0], A.military[1],A.military[2],A.military[3]);
-        semop(my_sem, &p, 0);
+        semop(my_sem, &p, 1);
         if (costs(A) <= me->resources) {
             me->resources -= costs(A);
-            semop(my_sem, &v, 0);
+            semop(my_sem, &v, 1);
             for (int i = 0; i < 4; i++) {
                 while (A.military[i] > 0) {
                     recru R;
@@ -151,7 +158,7 @@ void recruit(player * me,int player_id,int my_sem, int my_msg, int recruitqueue,
         } else {
             send_text(my_msg, "We need more resources.\n");
             printf("Recruit request denied.\n");
-            semop(my_sem, &v, 0);
+            semop(my_sem, &v, 1);
         }
     }
     exit(0);
@@ -164,13 +171,13 @@ void addUnits(player * me,int player_id, int my_sem, int recruitqueue, int * end
     while(*endgame == 0) {
         msgrcv(recruitqueue, &Q, sizeof(Q) - sizeof(long int), RECRUIT_TYPE + player_id, 0);
         sleep(times[Q.unit_id]);
-        semop(my_sem, &p, 0);
+        semop(my_sem, &p, 1);
         if (Q.unit_id < 3) {
             me->military[Q.unit_id] += 1;
         } else {
             me->workers += 1;
         }
-        semop(my_sem, &v, 0);
+        semop(my_sem, &v, 1);
     }
     exit(0);
 }
@@ -184,12 +191,12 @@ void battle(player * players[3],int atk_id,int def_id, int sems[3], aggro A, int
     todef.mtype = TEXT_TYPE;
     toatk.mtype = TEXT_TYPE;
     sleep(5);
-    semop(sems[def_id],&p,0);
+    semop(sems[def_id],&p,1);
     for(int i = 0; i < 3; i++){
         sum_off += off[i]*A.army[i];
         sum_def += def[i]*players[def_id]->military[i];
     }
-    semop(sems[atk_id],&p,0);
+    semop(sems[atk_id],&p,1);
     if(sum_off > sum_def){
 
         for(int i = 0; i < 3; i++){
@@ -217,8 +224,8 @@ void battle(player * players[3],int atk_id,int def_id, int sems[3], aggro A, int
         strcpy(todef.mtext,"We've been attacked and won >:D\n");
         strcpy(toatk.mtext,"Our attack failed :(\n");
     }
-    semop(sems[atk_id],&v,0);
-    semop(sems[def_id],&v,0);
+    semop(sems[atk_id],&v,1);
+    semop(sems[def_id],&v,1);
     msgsnd(msgs[atk_id],&toatk,sizeof(toatk)-sizeof(long int), 0);
     msgsnd(msgs[def_id],&todef,sizeof(todef)-sizeof(long int), 0);
 }
@@ -226,14 +233,14 @@ void attack(player * players[3],int my_id, int sems[3],int msgs[3],int * endgame
     aggro U;
     while(*endgame==0) {
         msgrcv(msgs[my_id], &U, sizeof(U) - sizeof(long int), ATTACK_TYPE,0);
-        semop(sems[my_id],&p,0);
+        semop(sems[my_id],&p,1);
         int dont = 0;
         for(int i = 0; i < 3; i++)
         {
             if(U.army[i] > players[my_id]->military[i])
             {
                 send_text(msgs[my_id],"We need more soldiers.\n");
-                semop(sems[my_id],&v,0);
+                semop(sems[my_id],&v,1);
                 dont = 1;
             }
 
@@ -284,9 +291,9 @@ void player_handling(player * players[3],int my_id, int sems[3], int msgs[3], in
 }
 
 void test(player * P, int sem){
-    semop(sem,&p,0);
+    semop(sem,&p,1);
     P->resources += 50;
-    semop(sem,&v,0);
+    semop(sem,&v,1);
 }
 
 void players_init(player * players[3], int sems[3], int queues[3], int * endgame, int * all)
@@ -303,9 +310,9 @@ void players_init(player * players[3], int sems[3], int queues[3], int * endgame
                 exit(0);
             }
             else{
-                semop(sems[0],&p,0);
+                semop(sems[0],&p,1);
                 *all+=1;
-                semop(sems[0],&v,0);
+                semop(sems[0],&v,1);
             } 
             //printf("Message received.\n");
             while((*all != 3));
@@ -377,13 +384,13 @@ int main(){
     if(!fork()) {
         while (*endgame == 0) {
             for (int i = 0; i < 3; i++) {
-                semop(semaphores[i], &p, 0);
+                semop(semaphores[i], &p, 1);
                 if(players[i]->VP == 5)
                 {
 
                     send_end(playqueues,i, endgame);
                 }
-                semop(semaphores[i],&v,0);
+                semop(semaphores[i],&v,1);
             }
         }
         exit(0);
